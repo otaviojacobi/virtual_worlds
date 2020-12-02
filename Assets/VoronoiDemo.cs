@@ -1,8 +1,7 @@
 using UnityEngine;
+using UnityEngine.AI;
 using System.Collections.Generic;
 using Delaunay.Geo;
-
-
 
 public class VoronoiDemo : MonoBehaviour
 {
@@ -15,12 +14,11 @@ public class VoronoiDemo : MonoBehaviour
     public GameObject Bench;
     public GameObject Bush;
     public GameObject BlueCar;
-
     public GameObject GreenCar;
-
     public GameObject PinkCar;
-
     public GameObject BrownCar;
+    public GameObject PersonPrefab;
+
 
     private List<LineSegment> normalizedEdges;
     private List<Vector2> roadPoints;
@@ -36,14 +34,13 @@ public class VoronoiDemo : MonoBehaviour
 
     private List<Vector2> buildPoints;
     private List<Vector2> parkPoints;
-
-    private Texture2D lightedBuildTexture;
-
+    private float dayTime;
     private Dictionary<int, Building> allBuildings;
     private List<Vector3> workingBuildingsCoords;
     private List<Vector3> housingBuildingsCoords;
 
     private List<Vector3> freeHousingCoords;
+    private List<Vector3> freeWorkingCoords;
 
     private List<Person> population;
 
@@ -56,14 +53,7 @@ public class VoronoiDemo : MonoBehaviour
     {
         Random.InitState(4);
 
-        lightedBuildTexture = (Texture2D)Resources.Load("llightedText");
-
         mainCamera = Camera.main;
-
-        if (lightedBuildTexture == null)
-        {
-            Debug.Log("Could not find lighted texture");
-        }
 
         map = createMap();
 
@@ -88,8 +78,11 @@ public class VoronoiDemo : MonoBehaviour
         /* Put buildings using buildPoints */
         instantiateBuildings();
 
+        dayTime = 0.7f;
+
         /* Create our bon hommes. *NOTE*: always call this last :) */
         createPopulation(Config.POPULATION_SIZE);
+
 
         mainCamera.transform.position = population[0].WorldHousePostion();
     }
@@ -356,7 +349,7 @@ public class VoronoiDemo : MonoBehaviour
                 go.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
 
                 Vector3 buildPos = new Vector3(point.y, 0, point.x);
-                allBuildings[buildPos.GetHashCode()] = new Building(buildPos, closestPoint, go);
+                allBuildings[Utils.HashVector3(buildPos)] = new Building(buildPos, closestPoint, go);
                 housingBuildingsCoords.Add(buildPos);
             }
             else if (height < 0.75)
@@ -366,7 +359,7 @@ public class VoronoiDemo : MonoBehaviour
                 go.transform.localScale = new Vector3(0.01f, 0.01f * height, 0.01f);
 
                 Vector3 buildPos = new Vector3(point.y, 0, point.x);
-                allBuildings[buildPos.GetHashCode()] = new Building(buildPos, closestPoint, go);
+                allBuildings[Utils.HashVector3(buildPos)] = new Building(buildPos, closestPoint, go);
                 housingBuildingsCoords.Add(buildPos);
 
             }
@@ -381,8 +374,8 @@ public class VoronoiDemo : MonoBehaviour
                     go = Instantiate(Build, Utils.LocalToWorld(point, 0.1f * cur_floor), rot);
                     go.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
 
-                    Vector3 buildPos = new Vector3(point.y, cur_floor, point.x);
-                    allBuildings[buildPos.GetHashCode()] = new Building(buildPos, closestPoint, go);
+                    Vector3 buildPos = new Vector3(point.y, 0.1f * cur_floor, point.x);
+                    allBuildings[Utils.HashVector3(buildPos)] = new Building(buildPos, closestPoint, go);
                     workingBuildingsCoords.Add(buildPos);
 
                 }
@@ -390,6 +383,8 @@ public class VoronoiDemo : MonoBehaviour
         }
 
         freeHousingCoords = housingBuildingsCoords.ConvertAll(house => new Vector3(house.x, house.y, house.z));
+        freeWorkingCoords = workingBuildingsCoords.ConvertAll(house => new Vector3(house.x, house.y, house.z));
+
     }
 
     private bool inParkRegion(Vector2 point)
@@ -400,38 +395,52 @@ public class VoronoiDemo : MonoBehaviour
     private Vector3 selectRandomHouse()
     {
 
+        // Not enough houses left, repeat the houses
         if (freeHousingCoords.Count == 0)
         {
-            Debug.Log("TODO: FIXME");
+            return housingBuildingsCoords[Random.Range(0, housingBuildingsCoords.Count)];
+        } else {
+            int houseIdx = Random.Range(0, freeHousingCoords.Count);
+            Vector3 house = freeHousingCoords[houseIdx];
+            freeHousingCoords.RemoveAt(houseIdx);
+            return house;
         }
-
-        int houseIdx = Random.Range(0, freeHousingCoords.Count);
-        Vector3 house = freeHousingCoords[houseIdx];
-
-        freeHousingCoords.RemoveAt(houseIdx);
-
-        return house;
     }
 
     private Vector3 selectRandomJob()
     {
-        return workingBuildingsCoords[Random.Range(0, workingBuildingsCoords.Count)];
+        // Not enough working places left, repeat the working places
+        if(freeWorkingCoords.Count == 0)
+        {
+            return workingBuildingsCoords[Random.Range(0, workingBuildingsCoords.Count)];
+        } else 
+        {
+            int workIdx = Random.Range(0, freeWorkingCoords.Count);
+            Vector3 work = freeWorkingCoords[workIdx];
+            freeWorkingCoords.RemoveAt(workIdx);
+            return work;
+        }
     }
 
     private void createPopulation(int populationSize)
     {
         population = new List<Person>();
 
-        int total = housingBuildingsCoords.Count;
-
         for (int i = 0; i < populationSize; i++)
         {
-            Person p = new Person(selectRandomJob(), selectRandomHouse());
+            GameObject car = getRandomCar();
+            Person p = new Person(selectRandomJob(), selectRandomHouse(), graph);
+            Building house = allBuildings[Utils.HashVector3(p.housePosition)];
+            Building work = allBuildings[Utils.HashVector3(p.workPostion)];
+            p.house = house;
+            p.work = work;
+            house.TurnLightsOn();
 
-            Building house = allBuildings[p.housePosition.GetHashCode()];
+            p.carInstance = Instantiate(car, p.WorldHousePostion(), Quaternion.Euler(0, house.instance.transform.rotation.eulerAngles.y + 90, 0));
+            p.carInstance.transform.localScale = new Vector3(0.03f, 0.03f, 0.03f);
 
-            p.instance = Instantiate(getRandomCar(), p.WorldHousePostion(), Quaternion.Euler(0, house.instance.transform.rotation.eulerAngles.y + 90, 0));
-            p.instance.transform.localScale = new Vector3(0.03f, 0.03f, 0.03f);
+            p.personInstance = Instantiate(PersonPrefab, p.WorldHousePostion(), Quaternion.Euler(0, house.instance.transform.rotation.eulerAngles.y + 90, 0));
+            p.personInstance.transform.localScale = new Vector3(0.15f, 0.15f, 0.15f);
 
             population.Add(p);
         }
@@ -448,27 +457,92 @@ public class VoronoiDemo : MonoBehaviour
 
     private void movePeople()
     {
+        Debug.Log(dayTime);
         for (int i = 0; i < population.Count; i++)
         {
 
             Person p = population[i];
+            float speed = 0.3f;
 
-            Vector2 routePoint = allBuildings[p.housePosition.GetHashCode()].nearestPosition;
-            Vector3 target = Utils.LocalToWorld(routePoint, 0.015f);
-
-
-            if (!p.onRoad && Mathf.Abs(Vector3.Distance(p.instance.transform.position, target)) > 0f)
+            // If at home, then first go to the nearest road
+            if (p.STATUS == Config.STATUS_AT_HOME)
             {
-                p.instance.transform.position = Vector3.MoveTowards(p.instance.transform.position, target, Time.deltaTime * 0.18f);
+                p.house.TurnLightsOff();
+                Vector2 routePoint = p.house.nearestPosition;
+                p.GoTo(routePoint, Config.STATUS_ON_SIDEWALK);
+                speed = 0.035f;
             }
-            else
+            else if (p.STATUS == Config.STATUS_ON_SIDEWALK)
             {
-                p.onRoad = true;
-                p.FillRoute(graph);
-                p.Move();
-
+                speed = 0.035f;
+                if(!p.IsMoving()) 
+                {
+                    p.FollowRoadTo(p.LocalWorkPosition(), Config.STATUS_ON_ROAD);
+                    Vector2 routePoint = p.work.nearestPosition;
+                    p.GoTo(routePoint, Config.STATUS_ON_ROAD);
+                }
+            }
+            else if(p.STATUS == Config.STATUS_ON_ROAD) 
+            {
+                if(!p.IsMoving()) 
+                {
+                    p.GoTo(new Vector2(p.workPostion.z, p.workPostion.x), Config.STATUS_AT_WORK);
+                    speed = 0.035f;
+                }
+            }
+            else if(p.STATUS == Config.STATUS_AT_WORK)
+            {
+                speed = 0.035f;
+                if(!p.IsMoving()) 
+                {
+                    p.work.TurnLightsOn();
+                }
+            }
+            else if(p.STATUS == Config.STATUS_GO_HOME)
+            {
+                if(!p.IsMoving()) 
+                {
+                    p.work.TurnLightsOff();
+                    Vector2 routePoint = p.work.nearestPosition;
+                    p.GoTo(routePoint, Config.STATUS_TO_HOME);
+                    speed = 0.035f;
+                }
+            }
+            else if(p.STATUS == Config.STATUS_TO_HOME)
+            {
+                speed = 0.035f;
+                if(!p.IsMoving()) 
+                {
+                    p.FollowRoadTo(p.LocalHousePosition(), Config.STATUS_WAY_HOME);
+                    Vector2 routePoint = p.house.nearestPosition;
+                    p.GoTo(routePoint, Config.STATUS_WAY_HOME);
+                }
+            }
+            else if(p.STATUS == Config.STATUS_WAY_HOME)
+            {
+                if(!p.IsMoving()) 
+                {
+                    p.GoTo(new Vector2(p.housePosition.z, p.housePosition.x), Config.STATUS_ENTERING_HOME);
+                    speed = 0.035f;
+                }
+            }
+            else if(p.STATUS == Config.STATUS_ENTERING_HOME)
+            {
+                speed = 0.035f;
+                if(!p.IsMoving()) 
+                {
+                    p.house.TurnLightsOn();
+                    p.STATUS = Config.STATUS_AT_SLEEP;
+                }
             }
 
+            if(dayTime >= 2.4f) 
+            {
+                dayTime = 0f;
+            }
+            dayTime += Config.SIMULATION_SPEED_UP * Time.deltaTime * 0.0001f / 8f;
+
+            p.Move(speed, dayTime);
         }
     }
 

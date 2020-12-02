@@ -19,7 +19,19 @@ public class Config
 
     public static int ROADS_MAX = 100;
 
-    public static int POPULATION_SIZE = 1;
+    public static int POPULATION_SIZE = 800;
+
+    public static float SIMULATION_SPEED_UP = 2f;
+
+    public static int STATUS_AT_SLEEP = 0;
+    public static int STATUS_AT_HOME = 1;
+    public static int STATUS_ON_SIDEWALK = 3;
+    public static int STATUS_ON_ROAD = 4;
+    public static int STATUS_AT_WORK = 5;
+    public static int STATUS_GO_HOME = 6;
+    public static int STATUS_TO_HOME = 7;
+    public static int STATUS_WAY_HOME = 8;
+    public static int STATUS_ENTERING_HOME = 9;
 }
 
 public class Utils
@@ -188,6 +200,26 @@ public class Utils
         }
         return false;
 
+    }
+
+    public static float SampleGaussian(float mean, float stddev)
+    {
+        float x1 = 1 - Random.Range(0f, 1f);
+        float x2 = 1 - Random.Range(0f, 1f);
+
+        float y1 = Mathf.Sqrt(-2f * Mathf.Log(x1)) * Mathf.Cos(2f * Mathf.PI * x2);
+        return y1 * stddev + mean;
+    }
+
+    public static int HashVector2(Vector2 vec)
+    {
+        return 1000 * (int) vec.x + (int) vec.y;
+    }
+
+    public static int HashVector3(Vector3 vec)
+    {
+        float hash = 2000000f *  vec.x +  (int) 2000f * vec.y + (int) vec.z;
+        return (int) hash;
     }
 
 }

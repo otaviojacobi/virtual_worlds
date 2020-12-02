@@ -1,15 +1,13 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Delaunay.Geo;
-using Delaunay;
-
+using Priority_Queue;
 
 public class Graph
 {
     private Dictionary<int, List<Vector2>> inner;
 
-    private List<Vector2> points;
+    private Dictionary<int, Vector2> hashToVec;
 
     private List<LineSegment> segments;
 
@@ -17,7 +15,7 @@ public class Graph
     {
 
         inner = new Dictionary<int, List<Vector2>>();
-        points = new List<Vector2>();
+        hashToVec = new Dictionary<int, Vector2>();
         segments = edges;
 
         for (int i = 0; i < edges.Count; i++)
@@ -25,11 +23,11 @@ public class Graph
             Vector2 left = (Vector2)edges[i].p0;
             Vector2 right = (Vector2)edges[i].p1;
 
-            if(!points.Contains(left)) points.Add(left);
-            if(!points.Contains(right)) points.Add(right);
+            int lh = Utils.HashVector2(left);
+            int rh = Utils.HashVector2(right);
 
-            int lh = properHashCode(left);
-            int rh = properHashCode(right);
+            hashToVec[lh] = left;
+            hashToVec[rh] = right;
 
             if (!inner.ContainsKey(lh))
             {
@@ -50,26 +48,6 @@ public class Graph
             else
             {
                 inner[rh].Add(left);
-            }
-        }
-
-        foreach(int key in inner.Keys)
-        {
-            foreach(Vector2 value in inner[key])
-            {
-                bool found = false;
-                foreach(Vector2 secondValue in inner[properHashCode(value)])
-                {
-                    if(properHashCode(secondValue) == key)
-                    {
-                        found = true;
-                    }
-                }
-                if(found == false)
-                {
-                    Debug.Log("ACHEI O PULO DO GATO");
-
-                }
             }
         }
 
@@ -97,7 +75,7 @@ public class Graph
 
                 foreach(Vector2 neib in inner[key])
                 {
-                    bfsq.Enqueue(properHashCode(neib));
+                    bfsq.Enqueue(Utils.HashVector2(neib));
                 }
             }
         }
@@ -117,15 +95,15 @@ public class Graph
         {
             foreach(Vector2 point in curPoints)
             {
-                if(!Q.ContainsKey(properHashCode(point)))
+                if(!Q.ContainsKey(Utils.HashVector2(point)))
                 {
-                    Q[properHashCode(point)] = point;
-                    dist[properHashCode(point)] = float.MaxValue;
+                    Q[Utils.HashVector2(point)] = point;
+                    dist[Utils.HashVector2(point)] = float.MaxValue;
                 }
             }
         }
 
-        dist[properHashCode(src)] = 0f;
+        dist[Utils.HashVector2(src)] = 0f;
 
 
         while (Q.Keys.Count > 0)
@@ -137,31 +115,28 @@ public class Graph
 
             foreach (Vector2 v in inner[idx])
             {
-                if (Q.ContainsKey(properHashCode(v)))
+                if (Q.ContainsKey(Utils.HashVector2(v)))
                 {
                     float alt = dist[idx] + Mathf.Abs(Vector2.Distance(u, v));
-                    if (alt < dist[properHashCode(v)])
+                    if (alt < dist[Utils.HashVector2(v)])
                     {
-                        if(inner[properHashCode(u)].Contains(v))
+                        if(inner[Utils.HashVector2(u)].Contains(v))
                         {
-                            dist[properHashCode(v)] = alt;
-                            prev[properHashCode(v)] = u;
+                            dist[Utils.HashVector2(v)] = alt;
+                            prev[Utils.HashVector2(v)] = u;
                         }
                     }
                 }
             }
         }
         S = new List<Vector2>();
-
         Vector2 U = new Vector2(dest.x, dest.y);
 
-        Debug.Assert(U.Equals(dest));
-
-        if (prev.ContainsKey(properHashCode(U)) || U.Equals(src))
+        if (prev.ContainsKey(Utils.HashVector2(U)) || U.Equals(src))
         {
             while (true)
             {
-                int hash = properHashCode(U);
+                int hash = Utils.HashVector2(U);
 
                 if (!prev.ContainsKey(hash)) 
                     break;
@@ -173,29 +148,88 @@ public class Graph
             }
         }
 
-        for(int i = 0; i < S.Count-1; i++)
-        {
-            Vector2 cur = S[i];
-            Vector2 nex = S[i+1];
-            if(!inner[properHashCode(cur)].Contains(nex))
-            {
-                Debug.LogError("AHAM ");// + i + " " + S.Count);
-            } else 
-            {
-                Debug.Log("Should log");
-            }
-        }
-
         return S;
     }
 
+    public List<Vector2> Astar(Vector2 start, Vector2 goal)
+    {
+        SimplePriorityQueue<int> openSet = new SimplePriorityQueue<int>();
+        Dictionary<int, Vector2> cameFrom = new Dictionary<int, Vector2>();
+        Dictionary<int, float> gScore = new Dictionary<int, float>();
+        Dictionary<int, float> fScore = new Dictionary<int, float>();
+
+
+
+        foreach(int key in inner.Keys)
+        {
+            gScore[key] = float.MaxValue;
+            fScore[key] = float.MaxValue;
+        }
+        int startHash = Utils.HashVector2(start);
+        int goalHash = Utils.HashVector2(goal);
+
+        gScore[startHash] = 0f;
+        fScore[startHash] = h(start, goal);
+
+        openSet.Enqueue(startHash, fScore[startHash]);
+
+        while(openSet.Count > 0)
+        {
+            int current = openSet.First;
+
+            if(current == goalHash)
+            {
+                return reconstructPath(cameFrom, current);
+            }
+            
+            openSet.Dequeue();
+
+            foreach(Vector2 neib in inner[current])
+            {
+                // d = h :) 
+                float tentativeGScore = gScore[current] + h(hashToVec[current], neib);
+                int hashNeib = Utils.HashVector2(neib);
+                if(tentativeGScore < gScore[hashNeib])
+                {
+                    cameFrom[hashNeib] = hashToVec[current];
+                    gScore[hashNeib] = tentativeGScore;
+                    fScore[hashNeib] = gScore[hashNeib] + h(start, neib);
+
+                    if(!openSet.Contains(hashNeib))
+                    {
+                        openSet.Enqueue(hashNeib, fScore[hashNeib]);
+                    }
+                }
+            }
+        }
+
+        Debug.LogWarning("Astar failed to find a path");
+        return null;
+    }
+
+    private List<Vector2> reconstructPath(Dictionary<int, Vector2> cameFrom, int current)
+    {
+        List<Vector2> path = new List<Vector2>();
+        while(cameFrom.ContainsKey(current))
+        {   
+            Vector2 next = cameFrom[current];
+            current = Utils.HashVector2(next);
+            path.Insert(0, next);
+        }
+        return path;
+    }
+
+    private float h(Vector2 dest, Vector2 n)
+    {
+        return Mathf.Abs(Vector2.Distance(dest, n));
+    }
 
     public Vector2 GetClosestPoint(Vector2 position)
     {
         // The closest point might not be so trivial, because we want to get to road asap
 
-        return Utils.ClosestPoint(position, points);
-        /*
+        //return Utils.ClosestPoint(position, points);
+
         // So firsts we find the closest segment to us
         LineSegment closest = Utils.GetClosestSegment(position, segments);
 
@@ -207,7 +241,11 @@ public class Graph
         if(distp0 < distp1) 
             return (Vector2)closest.p0;
         return (Vector2)closest.p1;
-         */
+    }
+
+    public bool HasNode(Vector2 node)
+    {
+        return inner.ContainsKey(Utils.HashVector2(node));
     }
 
     private int getMinDistKey(Dictionary<int, Vector2> Q, Dictionary<int, float> dist)
@@ -230,11 +268,6 @@ public class Graph
         }
 
         return finalKey;
-    }
-
-    private int properHashCode(Vector2 vec)
-    {
-        return 1000 * (int) vec.x + (int) vec.y;
     }
 
 }
