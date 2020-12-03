@@ -15,7 +15,6 @@ public class Person
     public GameObject personInstance { get; set; }
     public int STATUS { get; set; }
 
-    private float normality { get; set; }
     private float homeWorkDistance { get; set; }
 
     private Graph routes;
@@ -26,6 +25,9 @@ public class Person
 
     private GameObject carPrefab;
 
+    private float wakeUpTime { get; set; }
+    private float leaveWorkTime { get; set; }
+
     public Person(Vector3 workPostion, Vector3 housePosition, Graph routes)
     {
         this.workPostion = workPostion;
@@ -33,8 +35,8 @@ public class Person
         this.homeWorkDistance = GetHomeWorkDistance();
 
         this.routes = routes;
-        this.normality = Mathf.Abs(Utils.SampleGaussian(100f, 5f));
-
+        this.wakeUpTime = Mathf.Clamp(Utils.SampleGaussian(0.7f, 0.06f), 0.6f, 0.8f);
+        this.leaveWorkTime = Mathf.Clamp(Utils.SampleGaussian(1.75f, 0.04f), 1.7f, 1.8f);
 
         this.isInCar = true;
 
@@ -47,12 +49,12 @@ public class Person
         return Utils.LocalToWorld(housePosition, 0.015f);
     }
 
-    public void Move(float speed, float dayTime)
+    public void Move(float speed, float dayTime, float SIMULATION_SPEED_UP)
     {
 
         //Debug.Log(currentEnergy);
 
-        this.manageEnergy(dayTime);
+        this.manageEnergy(dayTime, SIMULATION_SPEED_UP);
 
         this.checkModel();
 
@@ -61,14 +63,14 @@ public class Person
             return; 
         }
 
-        float moveStep = Config.SIMULATION_SPEED_UP * Time.deltaTime * speed;
+        float moveStep = SIMULATION_SPEED_UP * Time.deltaTime * speed;
         Vector3 target = Utils.LocalToWorld(route[0], 0.015f);
         carInstance.transform.position = Vector3.MoveTowards(carInstance.transform.position, target, moveStep);
         personInstance.transform.position = Vector3.MoveTowards(personInstance.transform.position, target, moveStep);
 
 
         Vector3 targetDirection = target - carInstance.transform.position;
-        float singleStep = Config.SIMULATION_SPEED_UP * 5f * Time.deltaTime;
+        float singleStep = SIMULATION_SPEED_UP * 5f * Time.deltaTime;
 
         Vector3 newDirection = Vector3.RotateTowards(carInstance.transform.forward, targetDirection, singleStep, 0.0f);
         carInstance.transform.rotation = Quaternion.LookRotation(newDirection);
@@ -80,9 +82,9 @@ public class Person
         }
     }
 
-    private void manageEnergy(float dayTime)
+    private void manageEnergy(float dayTime, float SIMULATION_SPEED_UP)
     {
-        float singleStep = Config.SIMULATION_SPEED_UP * 5f * Time.deltaTime;
+        float singleStep = SIMULATION_SPEED_UP * 5f * Time.deltaTime;
 
         if(STATUS == Config.STATUS_AT_SLEEP)
         {
@@ -94,10 +96,10 @@ public class Person
                 STATUS = Config.STATUS_AT_HOME;
             }
             */
-            if(dayTime > 0.8f && dayTime < 0.9f) {
-                float prob = Random.Range(0f, 1f);
-                if(prob < 0.2f + 8*(dayTime - 0.8f))
+            if(dayTime >= 0.58f && dayTime <= 0.82f) {
+                if(dayTime > wakeUpTime) {
                     STATUS = Config.STATUS_AT_HOME;
+                }
             }
         } 
         else if(STATUS == Config.STATUS_AT_WORK )
@@ -109,10 +111,10 @@ public class Person
                 STATUS = Config.STATUS_GO_HOME;
             }
             */
-            if(dayTime > 1.7f && dayTime < 1.8f) {
-                float prob = Random.Range(0f, 1f);
-                if(prob < 0.2f + 8*(dayTime - 1.7f))
+            if(dayTime >= 1.68f && dayTime <= 1.82f) {
+                if(dayTime > leaveWorkTime) {
                     STATUS = Config.STATUS_GO_HOME;
+                }
             }
         } 
     }

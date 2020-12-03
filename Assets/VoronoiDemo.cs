@@ -18,6 +18,11 @@ public class VoronoiDemo : MonoBehaviour
     public GameObject PinkCar;
     public GameObject BrownCar;
     public GameObject PersonPrefab;
+    public GameObject MyTerrain;
+
+    [Range(1f, 16f)]
+    public float SIMULATION_SPEED_UP = 1f;
+
 
 
     private List<LineSegment> normalizedEdges;
@@ -48,7 +53,9 @@ public class VoronoiDemo : MonoBehaviour
 
     Camera mainCamera;
 
-
+    [SerializeField] private Light DirectionalLight;
+    [SerializeField] private LightingPreset Preset;
+    //Variables
     void Start()
     {
         Random.InitState(4);
@@ -56,6 +63,9 @@ public class VoronoiDemo : MonoBehaviour
         mainCamera = Camera.main;
 
         map = createMap();
+
+        setUpAround();
+
 
         /* Create random points for roads */
         roadPoints = getRoadPoints(Config.ROADS_MAX);
@@ -78,7 +88,7 @@ public class VoronoiDemo : MonoBehaviour
         /* Put buildings using buildPoints */
         instantiateBuildings();
 
-        dayTime = 0.7f;
+        dayTime = 0.6f;
 
         /* Create our bon hommes. *NOTE*: always call this last :) */
         createPopulation(Config.POPULATION_SIZE);
@@ -102,6 +112,58 @@ public class VoronoiDemo : MonoBehaviour
         return map;
     }
 
+    private void setUpAround()
+    {
+        TerrainLayer tl = new TerrainLayer();
+        Texture2D grassTexture = (Texture2D)Resources.Load("grassTex");
+
+        tl.normalMapTexture = grassTexture;
+        tl.diffuseTexture = grassTexture;
+
+        GameObject terrain = Instantiate(MyTerrain, new Vector3(-500f, -42f, -500f), Quaternion.identity);
+        terrain.GetComponent<Terrain>().terrainData = generateTerrainData(terrain.GetComponent<Terrain>().terrainData);
+
+        /*    
+        for(int i = -1; i <= 1; i++)
+        {
+            for(int j = -1; j <= 1; j++)
+            {
+                if(i == 0 && j == 0) continue;
+                GameObject terrain = Instantiate(MyTerrain, new Vector3(10*i - 5, -1f, 10*j - 5), Quaternion.identity);
+                terrain.GetComponent<Terrain>().terrainData = generateTerrainData(terrain.GetComponent<Terrain>().terrainData);
+            }
+        }
+         */
+    }
+
+    TerrainData generateTerrainData(TerrainData terrainData)
+    {
+        terrainData.heightmapResolution = 1001;
+        terrainData.size = new Vector3(1000f, 60f, 1000f);
+        float[,] heights = new float[1000, 1000];
+        for(int x = 0; x < 1000; x++)
+        {
+            for(int y = 0; y < 1000; y++)
+            {
+                float xCoord = (float) x / 1000f * 10f;
+                float yCoord = (float) y / 1000f * 10f;
+
+                if(x < 519f && x > 505f &&  y < 519f && y > 505f)
+                {
+                    heights[x,y] = 0.699f;
+
+                } else
+                {
+                    heights[x,y] = Mathf.PerlinNoise(xCoord, yCoord);
+                }
+
+            }
+        }
+
+        terrainData.SetHeights(0, 0, heights);
+        return terrainData;
+    }
+
     private List<Vector2> getRoadPoints(int maximumPoints)
     {
         List<Vector2> pts = new List<Vector2>();
@@ -112,7 +174,7 @@ public class VoronoiDemo : MonoBehaviour
             int y = (int)Random.Range(0, Config.HEIGHT - 1);
             int iter = 0;
 
-            while (map[x, y] < 0.7 && iter < 10)
+            while (map[x, y] < 0.75 && iter < 10)
             {
                 x = (int)Random.Range(0, Config.WIDTH - 1);
                 y = (int)Random.Range(0, Config.HEIGHT - 1);
@@ -206,6 +268,9 @@ public class VoronoiDemo : MonoBehaviour
         Vector2 newPoint;
         bool insidePark;
 
+        int totalComercial = 0;
+        int maxTotalComerial = (int)(0.7f * Config.BUILDINGS_MAX);
+
         while (total_points < maximumPoints)
         {
             int x = (int)Random.Range(0, Config.WIDTH - 1);
@@ -213,7 +278,7 @@ public class VoronoiDemo : MonoBehaviour
             int iter = 0;
 
 
-            while (map[x, y] < 0.80 && iter < 10)
+            while (map[x, y] < 0.60 && iter < 10)
             {
                 x = (int)Random.Range(0, Config.WIDTH - 1);
                 y = (int)Random.Range(0, Config.HEIGHT - 1);
@@ -233,26 +298,43 @@ public class VoronoiDemo : MonoBehaviour
 
                 float height = map[x, y];
 
-                float road_tolerancy = 7f;
-                float in_between_tolerancy = 30f;
+                float road_tolerancy = 5f;
+                float in_between_tolerancy = 10f;
 
-                if (height > 0.75) // big buildings can be near the roads
+                bool maximum_comerical = false;
+
+                if (height > 0.75f) // big buildings can be near the roads
                 {
                     road_tolerancy = 5f;
                     in_between_tolerancy = 20f;
+
+                    if(totalComercial > maxTotalComerial) maximum_comerical = true;
                 }
+
+                float tooFarTolerancy = 30f;
+
+                if(iter > 190)
+                    tooFarTolerancy = float.MaxValue;
 
                 insidePark = inParkRegion(newPoint);
 
-                if ((!insidePark && !Utils.IsPointClose(newPoint, pts, in_between_tolerancy) && !Utils.IsPointInSegments(newPoint, normalizedEdges, road_tolerancy)) || iter >= 200)
+                if ((!insidePark && !maximum_comerical
+                    && !Utils.IsPointClose(newPoint, pts, in_between_tolerancy) 
+                    && !Utils.IsPointInSegments(newPoint, normalizedEdges, road_tolerancy)) 
+                    && !Utils.IsPointTooFar(newPoint, normalizedEdges, tooFarTolerancy) || iter >= 200)
                 {
                     break;
                 }
                 iter++;
             }
 
+
             if (iter < 200 && !insidePark)
             {
+                if (map[(int)newPoint.x, (int)newPoint.y] > 0.75f)
+                {
+                    totalComercial++;
+                }
                 pts.Add(newPoint);
 
             }
@@ -360,8 +442,8 @@ public class VoronoiDemo : MonoBehaviour
 
                 Vector3 buildPos = new Vector3(point.y, 0, point.x);
                 allBuildings[Utils.HashVector3(buildPos)] = new Building(buildPos, closestPoint, go);
-                housingBuildingsCoords.Add(buildPos);
 
+                housingBuildingsCoords.Add(buildPos);
             }
             else
             {
@@ -375,6 +457,11 @@ public class VoronoiDemo : MonoBehaviour
                     go.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
 
                     Vector3 buildPos = new Vector3(point.y, 0.1f * cur_floor, point.x);
+
+                    if(allBuildings.ContainsKey(Utils.HashVector3(buildPos))) {
+                        Debug.LogError("COLISAO");
+                    }
+
                     allBuildings[Utils.HashVector3(buildPos)] = new Building(buildPos, closestPoint, go);
                     workingBuildingsCoords.Add(buildPos);
 
@@ -432,6 +519,10 @@ public class VoronoiDemo : MonoBehaviour
             Person p = new Person(selectRandomJob(), selectRandomHouse(), graph);
             Building house = allBuildings[Utils.HashVector3(p.housePosition)];
             Building work = allBuildings[Utils.HashVector3(p.workPostion)];
+
+            //Debug.DrawRay(Utils.LocalToWorld(p.workPostion), Vector3.up, Color.red, 30, true);
+            //Debug.DrawRay(Utils.LocalToWorld(), Vector3.up, Color.green, 30, true);
+            
             p.house = house;
             p.work = work;
             house.TurnLightsOn();
@@ -470,11 +561,11 @@ public class VoronoiDemo : MonoBehaviour
                 p.house.TurnLightsOff();
                 Vector2 routePoint = p.house.nearestPosition;
                 p.GoTo(routePoint, Config.STATUS_ON_SIDEWALK);
-                speed = 0.035f;
+                speed = 0.055f;
             }
             else if (p.STATUS == Config.STATUS_ON_SIDEWALK)
             {
-                speed = 0.035f;
+                speed = 0.055f;
                 if(!p.IsMoving()) 
                 {
                     p.FollowRoadTo(p.LocalWorkPosition(), Config.STATUS_ON_ROAD);
@@ -487,12 +578,12 @@ public class VoronoiDemo : MonoBehaviour
                 if(!p.IsMoving()) 
                 {
                     p.GoTo(new Vector2(p.workPostion.z, p.workPostion.x), Config.STATUS_AT_WORK);
-                    speed = 0.035f;
+                    speed = 0.055f;
                 }
             }
             else if(p.STATUS == Config.STATUS_AT_WORK)
             {
-                speed = 0.035f;
+                speed = 0.055f;
                 if(!p.IsMoving()) 
                 {
                     p.work.TurnLightsOn();
@@ -505,12 +596,12 @@ public class VoronoiDemo : MonoBehaviour
                     p.work.TurnLightsOff();
                     Vector2 routePoint = p.work.nearestPosition;
                     p.GoTo(routePoint, Config.STATUS_TO_HOME);
-                    speed = 0.035f;
+                    speed = 0.055f;
                 }
             }
             else if(p.STATUS == Config.STATUS_TO_HOME)
             {
-                speed = 0.035f;
+                speed = 0.055f;
                 if(!p.IsMoving()) 
                 {
                     p.FollowRoadTo(p.LocalHousePosition(), Config.STATUS_WAY_HOME);
@@ -523,12 +614,12 @@ public class VoronoiDemo : MonoBehaviour
                 if(!p.IsMoving()) 
                 {
                     p.GoTo(new Vector2(p.housePosition.z, p.housePosition.x), Config.STATUS_ENTERING_HOME);
-                    speed = 0.035f;
+                    speed = 0.055f;
                 }
             }
             else if(p.STATUS == Config.STATUS_ENTERING_HOME)
             {
-                speed = 0.035f;
+                speed = 0.055f;
                 if(!p.IsMoving()) 
                 {
                     p.house.TurnLightsOn();
@@ -540,9 +631,53 @@ public class VoronoiDemo : MonoBehaviour
             {
                 dayTime = 0f;
             }
-            dayTime += Config.SIMULATION_SPEED_UP * Time.deltaTime * 0.0001f / 8f;
 
-            p.Move(speed, dayTime);
+            p.Move(speed, dayTime, SIMULATION_SPEED_UP);
+        }
+        dayTime += SIMULATION_SPEED_UP * Time.deltaTime * 0.01f;
+        UpdateLighting(dayTime / 2.4f);
+    }
+
+    private void UpdateLighting(float timePercent)
+    {
+        //Set ambient and fog
+        RenderSettings.ambientLight = Preset.AmbientColor.Evaluate(timePercent);
+        RenderSettings.fogColor = Preset.FogColor.Evaluate(timePercent);
+
+        //If the directional light is set then rotate and set it's color, I actually rarely use the rotation because it casts tall shadows unless you clamp the value
+
+        if (DirectionalLight != null)
+        {
+            DirectionalLight.color = Preset.DirectionalColor.Evaluate(timePercent);
+
+            DirectionalLight.transform.localRotation = Quaternion.Euler(new Vector3((timePercent * 360f) - 90f, 170f, 0));
+        }
+
+    }
+
+    //Try to find a directional light to use if we haven't set one
+    private void OnValidate()
+    {
+        if (DirectionalLight != null)
+            return;
+
+        //Search for lighting tab sun
+        if (RenderSettings.sun != null)
+        {
+            DirectionalLight = RenderSettings.sun;
+        }
+        //Search scene for light that fits criteria (directional)
+        else
+        {
+            Light[] lights = GameObject.FindObjectsOfType<Light>();
+            foreach (Light light in lights)
+            {
+                if (light.type == LightType.Directional)
+                {
+                    DirectionalLight = light;
+                    return;
+                }
+            }
         }
     }
 

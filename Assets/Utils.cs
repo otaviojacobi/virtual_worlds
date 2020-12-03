@@ -15,13 +15,12 @@ public class Config
 
     public static int PARK_OBJECTS = 600;
 
-    public static int BUILDINGS_MAX = 500;
+    public static int BUILDINGS_MAX = 1200;
 
-    public static int ROADS_MAX = 100;
+    public static int ROADS_MAX = 140;
 
     public static int POPULATION_SIZE = 800;
 
-    public static float SIMULATION_SPEED_UP = 2f;
 
     public static int STATUS_AT_SLEEP = 0;
     public static int STATUS_AT_HOME = 1;
@@ -168,6 +167,26 @@ public class Utils
         return false;
     }
 
+    public static bool IsPointTooFar(Vector2 point, List<LineSegment> segments, float tolerancy = 0f)
+    {
+        float min = float.MaxValue;
+        for(int i = 0; i < segments.Count; i++)
+        {
+            float dist = HandleUtility.DistancePointToLineSegment(point, (Vector2)segments[i].p1, (Vector2)segments[i].p0);
+            if(dist < min)
+            {
+                min = dist;
+            }
+        }
+
+        if(min > tolerancy) {
+            return true;
+        } else {
+            return false;
+        }
+
+    }
+
     /* from a given point, returns the closest segment from a list of it */
     public static LineSegment GetClosestSegment(Vector2 point, List<LineSegment> segments)
     {
@@ -199,7 +218,6 @@ public class Utils
             }
         }
         return false;
-
     }
 
     public static float SampleGaussian(float mean, float stddev)
@@ -218,7 +236,7 @@ public class Utils
 
     public static int HashVector3(Vector3 vec)
     {
-        float hash = 2000000f *  vec.x +  (int) 2000f * vec.y + (int) vec.z;
+        double hash = 1000000f *  vec.x +  1000f * vec.y + 10f * vec.z;
         return (int) hash;
     }
 
